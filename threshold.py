@@ -58,7 +58,6 @@ def threshold(img, ksize = 3,  c_thresh=(170, 255), s_thresh=(20, 100), m_thresh
     combined = np.zeros_like(l_channel)
     combined[(((gradx == 1) & (grady == 1)) & ((mag_binary == 1) & (dir_binary == 1) & (color_h_binary == 1))) | ((color_s_binary == 1) )] = 1
 
-     # Stack each channel
     return combined
 
 def test_threshold(img_path):
