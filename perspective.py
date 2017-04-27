@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import sys
 import threshold as thr
+import calibration as cal
 
 SOURCE_POINTS=np.float32([[255, 685],  [1055, 685],  [660, 435], [621, 435]])
 DESTINATION_POINTS=np.float32([[255, 720],  [1055, 720],  [1055, 0], [255, 0]])
@@ -17,24 +18,28 @@ def transform(img, matrix):
     return cv2.warpPerspective(img, matrix, (img.shape[1], img.shape[0]))
 
 def test_perspective_color(img_path):
+    mtx, dist =cal.calibrate('camera_cal/', 9,  6)
     img = plt.imread(img_path)
+    undistorted = cv2.undistort(img, mtx, dist, None, mtx) 
     M, _ = perspective()
-    transformed = transform(img, M)
+    transformed = transform(undistorted, M)
 
-    cv2.polylines(img, [SOURCE_POINTS.reshape((-1,1,2)).astype(np.int32)], True, (255,0,0),3)
+    cv2.polylines(undistorted, [SOURCE_POINTS.reshape((-1,1,2)).astype(np.int32)], True, (255,0,0),3)
     transf_pts = DESTINATION_POINTS.reshape((-1,1,2)).astype(np.int32)
     cv2.polylines(transformed, [transf_pts], True, (0,0,255),3)
     f, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 9))
     f.tight_layout()
-    ax1.imshow(img)
+    ax1.imshow(undistorted)
     ax1.set_title('Original Image', fontsize=50)
     ax2.imshow(transformed)
     ax2.set_title(' Transformed result', fontsize=50)
     plt.show()
 
 def test_perspective_threshold(img_path):
+    mtx, dist =cal.calibrate('camera_cal/', 9,  6)
     img = plt.imread(img_path)
-    t = thr.threshold(img)
+    undistorted = cv2.undistort(img, mtx, dist, None, mtx) 
+    t = thr.threshold(undistorted)
     M, _ = perspective()
     transformed = transform(t, M)*255
 
