@@ -6,7 +6,7 @@ import sys
 import threshold as thr
 import calibration as cal
 
-SOURCE_POINTS=np.float32([[255, 685],  [1055, 685],  [660, 435], [621, 435]])
+SOURCE_POINTS=np.float32([[255, 685],  [1055, 685],  [672, 440], [606, 440]])
 DESTINATION_POINTS=np.float32([[255, 720],  [1055, 720],  [1055, 0], [255, 0]])
 
 def perspective(src=SOURCE_POINTS, dst=DESTINATION_POINTS):
@@ -48,7 +48,7 @@ def test_perspective_threshold(img_path):
     red = np.zeros_like(tr_color)
     cv2.polylines(tr_color, [transf_pts], True, (255, 0, 0), 3)
     output = cv2.addWeighted(tr_color,1.0, red, 0.5, 0.0)
-    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 9))
+    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
     f.tight_layout()
     ax1.imshow(t, cmap='gray')
     ax1.set_title('Original Image', fontsize=50)
