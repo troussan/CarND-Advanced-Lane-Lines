@@ -6,8 +6,8 @@ import sys
 import threshold as thr
 import calibration as cal
 
-SOURCE_POINTS=np.float32([[255, 685],  [1055, 685],  [672, 440], [606, 440]])
-DESTINATION_POINTS=np.float32([[255, 720],  [1055, 720],  [1055, 0], [255, 0]])
+SOURCE_POINTS=np.float32([[253, 686],  [1053, 686],  [702, 460], [582, 460]])
+DESTINATION_POINTS=np.float32([[253, 686],  [1053, 686],  [1053, 0], [253, 0]])
 
 def perspective(src=SOURCE_POINTS, dst=DESTINATION_POINTS):
     M = cv2.getPerspectiveTransform(src, dst)

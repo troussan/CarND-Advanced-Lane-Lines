@@ -6,35 +6,42 @@ import perspective as persp
 import sys
 import calibration as cal
 
+# Define conversions in x and y from pixels space to meters
+xm_per_pix = 3.7/850 # meters per pixel in x dimension
+ym_per_pix = 30.0/720 # meters per pixel in y dimension
+
+
 class Line():
-    def __init__(self, nwindows = 18, margin = 100, minpix = 200):
+    def __init__(self, nwindows = 18, margin = 100, minpix = 200, buff_lenght = 10):
+        self.buffer_lenght = buff_lenght
+        self.weights = [4, 7, 9, 7, 6, 5, 4, 3, 2, 1]
         self.nwindows = nwindows
         self.margin = margin
-        self.detected_margin = int(margin/2)
+        self.detected_margin = int(margin/4)
         self.minpix = minpix
+
         # was the line detected in the last iteration?
         self.detected = False  
+        # x values of the current fit of the line
+        self.current_xfitted = [] 
         # x values of the last n fits of the line
         self.recent_xfitted = [] 
         #average x values of the fitted line over the last n iterations
         self.bestx = None     
-        #polynomial coefficients averaged over the last n iterations
-        self.best_fit = None  
         #polynomial coefficients for the most recent fit
         self.current_fit = [np.array([False])]  
         #radius of curvature of the line in some units
         self.radius_of_curvature = None 
+        self.recent_curvature = []
+        self.current_radius_of_curvature = None
         #distance in meters of vehicle center from the line
         self.line_base_pos = None 
-        #difference in fit coefficients between last and new fits
-        self.diffs = np.array([0,0,0], dtype='float') 
+        self.current_line_base_pos = None
+        self.recent_line_base_pos = []
         #x values for detected line pixels
         self.allx = None  
         #y values for detected line pixels
         self.ally = None
-        # Define conversions in x and y from pixels space to meters
-        self.ym_per_pix = 30.0/720 # meters per pixel in y dimension
-        self.xm_per_pix = 3.7/700 # meters per pixel in x dimension
 
         
     def detect(self, binary_warped, x_base):     
@@ -70,55 +77,102 @@ class Line():
                 lane_inds.append(good_inds)
                 if len(good_inds) > self.minpix:
                     x_current = np.int(np.mean(nonzerox[good_inds]))
-                elif win_y_low < binary_warped.shape[0]/2:
-                    edge_reached = True
+#                elif win_y_high < binary_warped.shape[0]/3:
+#                    edge_reached = True
 
-            if x_current - self.margin <= 0 or (x_current + self.margin) >= binary_warped.shape[1]:
+            if x_current <= 0 or x_current >= binary_warped.shape[1]:
                     edge_reached = True
                 
         # Concatenate the arrays of indices
         lane_inds = np.concatenate(lane_inds)
         
-        if len(lane_inds) > 2:
-            # Extract line pixel positions
-            self.allx = nonzerox[lane_inds]
-            self.ally = nonzeroy[lane_inds] 
-
-            # Fit a second order polynomial to each
-            self.current_fit = np.polyfit(self.ally, self.allx, 2)
-            self.fitx(binary_warped)
-            self.detected = True
+        self.update_state(binary_warped, lane_inds, nonzerox, nonzeroy)
             
     def find_lines(self, binary_warped):
         nonzero = binary_warped.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
-        fit = self.current_fit
+        fit = self.best_fit
     
         lane_inds = ((nonzerox > (fit[0]*(nonzeroy**2) + fit[1]*nonzeroy + fit[2] - self.detected_margin)) & (nonzerox < (fit[0]*(nonzeroy**2) + fit[1]*nonzeroy + fit[2] + self.detected_margin))) 
 
+        self.update_state(binary_warped, lane_inds, nonzerox, nonzeroy)
+
+    def update_state(self, binary_warped, lane_inds, nonzerox, nonzeroy):
         if len(lane_inds) > 2:
             # Again, extract left and right line pixel positions
             # Extract left and right line pixel positions
-            self.allx = nonzerox[lane_inds]
-            self.ally = nonzeroy[lane_inds] 
+            x = nonzerox[lane_inds]
+            y = nonzeroy[lane_inds] 
 
-            # Fit a second order polynomial to each
-            self.current_fit = np.polyfit(self.ally, self.allx, 2)
-            self.fitx(binary_warped)
+            if x.size > 0:
+                self.allx = x
+                self.ally = y 
+                # Fit a second order polynomial to each
+                self.current_fit = np.polyfit(y, x, 2)
+                self.fitx(binary_warped)
+            else:
+                self.detected = False
         else:
             self.detected = False
 
+            
     def fitx(self, binary_warped):
         ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
-        self.recent_xfitted = self.current_fit[0]*ploty**2 + self.current_fit[1]*ploty + self.current_fit[2]
+        self.current_xfitted = self.current_fit[0]*ploty**2 + self.current_fit[1]*ploty + self.current_fit[2]
         self.ploty = ploty
-        y_eval = np.max(ploty)
+        y_eval = np.max(self.ploty)
         # Fit new polynomials to x,y in world space
-        fit_cr = np.polyfit(ploty*self.ym_per_pix, self.recent_xfitted*self.xm_per_pix, 2)
+        fit_cr = np.polyfit(self.ploty*ym_per_pix, self.current_xfitted*xm_per_pix, 2)
         # Calculate the new radii of curvature
-        self.radius_of_curvature = ((1 + (2*fit_cr[0]*y_eval*self.ym_per_pix + fit_cr[1])**2)**1.5) / np.absolute(2*fit_cr[0])
+        self.current_radius_of_curvature = ((1 + (2*fit_cr[0]*y_eval*ym_per_pix + fit_cr[1])**2)**1.5) / np.absolute(2*fit_cr[0])
+        #Calculate the position
+        self.current_line_base_pos = (self.current_xfitted[int(y_eval)] - binary_warped.shape[1]/2) * xm_per_pix
 
+    def reject(self, binary_warped):
+        self.detected = False
+        if len(self.recent_xfitted) > 0:
+            self.recent_xfitted = self.recent_xfitted[0:-1]
+            self.recent_curvature = self.recent_curvature[0:-1]
+            self.recent_line_base_pos = self.recent_line_base_pos[0:-1]
+        self.update_best(binary_warped)
+        
+    def update(self, binary_warped):
+        self.recent_xfitted = self.push(self.current_xfitted, self.recent_xfitted)
+        self.recent_curvature = self.push(self.current_radius_of_curvature, self.recent_curvature)        
+        self.recent_line_base_pos = self.push(self.current_line_base_pos, self.recent_line_base_pos) 
+        self.update_best(binary_warped)
+        
+    def update_best(self, binary_warped):
+        if len(self.recent_xfitted) > 0:
+            self.bestx = self.smooth(self.recent_xfitted)
+            self.radius_of_curvature = self.smooth(self.recent_curvature)
+            self.line_base_pos = self.smooth(self.recent_line_base_pos)
+
+    def smooth(self, buffer):
+        return np.average(buffer, axis=0, weights=self.weights[0:len(buffer)])
+        
+    def push(self, value, buffer):
+        if len(buffer) == 0:
+            buffer = [value]
+        elif len(buffer) < self.buffer_lenght:
+            buffer = np.vstack((buffer,value))
+        else:
+            buffer = np.roll(buffer, -1, axis=0)
+            buffer[self.buffer_lenght - 1] = value
+        return buffer
+        
+def make_sense(left_line, right_line):
+    # Check curvature
+    c_diff = (left_line.current_radius_of_curvature - right_line.current_radius_of_curvature) / ((left_line.current_radius_of_curvature + right_line.current_radius_of_curvature)/2)
+#    if abs(c_diff) > 2.5:
+#        return False
+    #Check parallel
+    
+    d_diff = np.abs(left_line.current_xfitted - right_line.current_xfitted)
+    if np.max(d_diff) > 1000 or np.min(d_diff) < 400:
+        return False
+    return True
 
 def sliding_window(binary_warped, left_line, right_line):
     """
@@ -136,33 +190,53 @@ def sliding_window(binary_warped, left_line, right_line):
         right_line.find_lines(binary_warped)
     else:
         # Take a histogram of the bottom half of the image
-        histogram = np.sum(binary_warped[int(binary_warped.shape[0]*3/4):,:], axis=0)
+        histogram = np.sum(binary_warped[int(binary_warped.shape[0]/2):,:], axis=0)
 
         # Find the peak of the left and right halves of the histogram
         midpoint = np.int(histogram.shape[0]/2)
         leftx_base = np.argmax(histogram[:midpoint])
         rightx_base = np.argmax(histogram[midpoint:]) + midpoint
+        if left_line.detected:
+            left_line.find_lines(binary_warped) 
+        else:
+            left_line.detect(binary_warped, leftx_base)
+        if right_line.detected:
+            right_line.find_lines(binary_warped)
+        else:
+            right_line.detect(binary_warped, rightx_base)
+    if make_sense(left_line, right_line):
+        left_line.update(binary_warped)
+        right_line.update(binary_warped)
+    else:
+        left_line.reject(binary_warped)
+        right_line.reject(binary_warped)
         
-        left_line.detect(binary_warped, leftx_base)
-        right_line.detect(binary_warped, rightx_base)
 
 def draw_lane(binary_warped, left_line, right_line, Minv, orig_img):
-    # Create an image to draw the lines on
-    warp_zero = np.zeros_like(binary_warped).astype(np.uint8)
-    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+    if len(left_line.recent_xfitted) > 0 and len(right_line.recent_xfitted) > 0:
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        # Create an image to draw the lines on
+        warp_zero = np.zeros_like(binary_warped).astype(np.uint8)
+        color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
 
-    # Recast the x and y points into usable format for cv2.fillPoly()
-    pts_left = np.array([np.transpose(np.vstack([left_line.recent_xfitted, left_line.ploty]))])
-    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_line.recent_xfitted, right_line.ploty])))])
-    pts = np.hstack((pts_left, pts_right))
+        # Recast the x and y points into usable format for cv2.fillPoly()
+        pts_left = np.array([np.transpose(np.vstack([left_line.bestx, left_line.ploty]))])
+        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_line.bestx, right_line.ploty])))])
+        pts = np.hstack((pts_left, pts_right))
 
-    # Draw the lane onto the warped blank image
-    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
 
-    # Warp the blank back to original image space using inverse perspective matrix (Minv)
-    newwarp = cv2.warpPerspective(color_warp, Minv, (orig_img.shape[1], orig_img.shape[0])) 
-    # Combine the result with the original image
-    return cv2.addWeighted(orig_img, 1, newwarp, 0.3, 0)
+        # Warp the blank back to original image space using inverse perspective matrix (Minv)
+        newwarp = cv2.warpPerspective(color_warp, Minv, (orig_img.shape[1], orig_img.shape[0])) 
+        curvature = (left_line.radius_of_curvature + right_line.radius_of_curvature) / 2
+        offset = (abs(left_line.line_base_pos) + abs(right_line.line_base_pos))/2 - abs(right_line.line_base_pos)
+        cv2.putText(newwarp, 'Curvature: ' + str(curvature) ,(int(orig_img.shape[1]/10),int(orig_img.shape[0]/10)), font, 1.5,(0,255,0),3,cv2.LINE_AA)
+        cv2.putText(newwarp, 'Offset: ' + str(offset) ,(int(orig_img.shape[1]/10),int(orig_img.shape[0]/10 + 50)), font, 1.5,(0,255,0),3,cv2.LINE_AA)
+        # Combine the result with the original image
+        return cv2.addWeighted(orig_img, 1, newwarp, 0.3, 0)
+    else:
+        return orig_img
     
 def test_sliding_window(img_path):
     margin = 100
