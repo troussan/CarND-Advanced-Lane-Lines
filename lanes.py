@@ -21,30 +21,33 @@ class Line():
         self.minpix = minpix
 
         # was the line detected in the last iteration?
-        self.detected = False  
+        self.detected = False
         # x values of the current fit of the line
-        self.current_xfitted = [] 
+        self.current_xfitted = []
         # x values of the last n fits of the line
-        self.recent_xfitted = [] 
+        self.recent_xfitted = []
         #average x values of the fitted line over the last n iterations
-        self.bestx = None     
+        self.bestx = None
         #polynomial coefficients for the most recent fit
-        self.current_fit = [np.array([False])]  
+        self.current_fit = [np.array([False])]
         #radius of curvature of the line in some units
-        self.radius_of_curvature = None 
+        self.radius_of_curvature = None
         self.recent_curvature = []
         self.current_radius_of_curvature = None
         #distance in meters of vehicle center from the line
-        self.line_base_pos = None 
+        self.line_base_pos = None
         self.current_line_base_pos = None
         self.recent_line_base_pos = []
         #x values for detected line pixels
-        self.allx = None  
+        self.allx = None
         #y values for detected line pixels
         self.ally = None
 
-        
-    def detect(self, binary_warped, x_base):     
+
+    def detect(self, binary_warped, x_base):
+        """
+        Detects lines using sliding window algorithm
+        """
         # Set height of windows
         window_height = np.int(binary_warped.shape[0]/self.nwindows)
 
@@ -82,32 +85,33 @@ class Line():
 
             if x_current <= 0 or x_current >= binary_warped.shape[1]:
                     edge_reached = True
-                
+
         # Concatenate the arrays of indices
         lane_inds = np.concatenate(lane_inds)
-        
+
         self.update_state(binary_warped, lane_inds, nonzerox, nonzeroy)
-            
+
     def find_lines(self, binary_warped):
+        """
+        Finds lines using already known polynomial from previous frames
+        """
         nonzero = binary_warped.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
         fit = self.best_fit
-    
-        lane_inds = ((nonzerox > (fit[0]*(nonzeroy**2) + fit[1]*nonzeroy + fit[2] - self.detected_margin)) & (nonzerox < (fit[0]*(nonzeroy**2) + fit[1]*nonzeroy + fit[2] + self.detected_margin))) 
+
+        lane_inds = ((nonzerox > (fit[0]*(nonzeroy**2) + fit[1]*nonzeroy + fit[2] - self.detected_margin)) & (nonzerox < (fit[0]*(nonzeroy**2) + fit[1]*nonzeroy + fit[2] + self.detected_margin)))
 
         self.update_state(binary_warped, lane_inds, nonzerox, nonzeroy)
 
     def update_state(self, binary_warped, lane_inds, nonzerox, nonzeroy):
         if len(lane_inds) > 2:
-            # Again, extract left and right line pixel positions
-            # Extract left and right line pixel positions
             x = nonzerox[lane_inds]
-            y = nonzeroy[lane_inds] 
+            y = nonzeroy[lane_inds]
 
             if x.size > 0:
                 self.allx = x
-                self.ally = y 
+                self.ally = y
                 # Fit a second order polynomial to each
                 self.current_fit = np.polyfit(y, x, 2)
                 self.fitx(binary_warped)
@@ -116,7 +120,7 @@ class Line():
         else:
             self.detected = False
 
-            
+
     def fitx(self, binary_warped):
         ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
         self.current_xfitted = self.current_fit[0]*ploty**2 + self.current_fit[1]*ploty + self.current_fit[2]
@@ -136,13 +140,13 @@ class Line():
             self.recent_curvature = self.recent_curvature[0:-1]
             self.recent_line_base_pos = self.recent_line_base_pos[0:-1]
         self.update_best(binary_warped)
-        
+
     def update(self, binary_warped):
         self.recent_xfitted = self.push(self.current_xfitted, self.recent_xfitted)
-        self.recent_curvature = self.push(self.current_radius_of_curvature, self.recent_curvature)        
-        self.recent_line_base_pos = self.push(self.current_line_base_pos, self.recent_line_base_pos) 
+        self.recent_curvature = self.push(self.current_radius_of_curvature, self.recent_curvature)
+        self.recent_line_base_pos = self.push(self.current_line_base_pos, self.recent_line_base_pos)
         self.update_best(binary_warped)
-        
+
     def update_best(self, binary_warped):
         if len(self.recent_xfitted) > 0:
             self.bestx = self.smooth(self.recent_xfitted)
@@ -151,7 +155,7 @@ class Line():
 
     def smooth(self, buffer):
         return np.average(buffer, axis=0, weights=self.weights[0:len(buffer)])
-        
+
     def push(self, value, buffer):
         if len(buffer) == 0:
             buffer = [value]
@@ -161,14 +165,14 @@ class Line():
             buffer = np.roll(buffer, -1, axis=0)
             buffer[self.buffer_lenght - 1] = value
         return buffer
-        
+
 def make_sense(left_line, right_line):
     # Check curvature
     c_diff = (left_line.current_radius_of_curvature - right_line.current_radius_of_curvature) / ((left_line.current_radius_of_curvature + right_line.current_radius_of_curvature)/2)
 #    if abs(c_diff) > 2.5:
 #        return False
     #Check parallel
-    
+
     d_diff = np.abs(left_line.current_xfitted - right_line.current_xfitted)
     if np.max(d_diff) > 1000 or np.min(d_diff) < 400:
         return False
@@ -184,7 +188,7 @@ def sliding_window(binary_warped, left_line, right_line):
 
     Returns left and right polynomial coefficients
     """
-    
+
     if left_line.detected and right_line.detected:
         left_line.find_lines(binary_warped)
         right_line.find_lines(binary_warped)
@@ -197,7 +201,7 @@ def sliding_window(binary_warped, left_line, right_line):
         leftx_base = np.argmax(histogram[:midpoint])
         rightx_base = np.argmax(histogram[midpoint:]) + midpoint
         if left_line.detected:
-            left_line.find_lines(binary_warped) 
+            left_line.find_lines(binary_warped)
         else:
             left_line.detect(binary_warped, leftx_base)
         if right_line.detected:
@@ -210,7 +214,7 @@ def sliding_window(binary_warped, left_line, right_line):
     else:
         left_line.reject(binary_warped)
         right_line.reject(binary_warped)
-        
+
 
 def draw_lane(binary_warped, left_line, right_line, Minv, orig_img):
     if len(left_line.recent_xfitted) > 0 and len(right_line.recent_xfitted) > 0:
@@ -228,7 +232,7 @@ def draw_lane(binary_warped, left_line, right_line, Minv, orig_img):
         cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
 
         # Warp the blank back to original image space using inverse perspective matrix (Minv)
-        newwarp = cv2.warpPerspective(color_warp, Minv, (orig_img.shape[1], orig_img.shape[0])) 
+        newwarp = cv2.warpPerspective(color_warp, Minv, (orig_img.shape[1], orig_img.shape[0]))
         curvature = (left_line.radius_of_curvature + right_line.radius_of_curvature) / 2
         offset = (abs(left_line.line_base_pos) + abs(right_line.line_base_pos))/2 - abs(right_line.line_base_pos)
         cv2.putText(newwarp, 'Curvature: ' + str(curvature) ,(int(orig_img.shape[1]/10),int(orig_img.shape[0]/10)), font, 1.5,(0,255,0),3,cv2.LINE_AA)
@@ -237,19 +241,19 @@ def draw_lane(binary_warped, left_line, right_line, Minv, orig_img):
         return cv2.addWeighted(orig_img, 1, newwarp, 0.3, 0)
     else:
         return orig_img
-    
+
 def test_sliding_window(img_path):
     margin = 100
     mtx, dist =cal.calibrate('camera_cal/', 9,  6)
     img = plt.imread(img_path)
-    undistorted = cv2.undistort(img, mtx, dist, None, mtx) 
+    undistorted = cv2.undistort(img, mtx, dist, None, mtx)
     t = thr.threshold(undistorted)
     M, _ = persp.perspective()
     binary_warped = persp.transform(t, M)
     left_line = Line()
     right_line = Line()
     sliding_window(binary_warped, left_line, right_line)
-    
+
     # Generate x and y values for plotting
     ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
     left_fitx = left_line.current_fit[0]*ploty**2 + left_line.current_fit[1]*ploty + left_line.current_fit[2]
@@ -270,7 +274,7 @@ def test_sliding_window(img_path):
     plt.show()
 
     sliding_window(binary_warped, left_line, right_line)
-    
+
     # Generate x and y values for plotting
     left_fitx = left_line.current_fit[0]*ploty**2 + left_line.current_fit[1]*ploty + left_line.current_fit[2]
     right_fitx = right_line.current_fit[0]*ploty**2 + right_line.current_fit[1]*ploty + right_line.current_fit[2]
@@ -301,7 +305,7 @@ def test_sliding_window(img_path):
     plt.xlim(0, 1280)
     plt.ylim(720, 0)
     plt.show()
-    
+
 
 if __name__ == "__main__":
     test_sliding_window(sys.argv[1])
